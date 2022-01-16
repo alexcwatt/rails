@@ -31,6 +31,8 @@ require "models/sponsor"
 require "models/mentor"
 require "models/contract"
 
+# maybe here
+
 class EagerLoadingTooManyIdsTest < ActiveRecord::TestCase
   fixtures :citations
 

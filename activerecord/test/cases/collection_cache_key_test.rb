@@ -9,9 +9,15 @@ require "models/post"
 require "models/comment"
 require "models/ship"
 
+# is there a polymorphic thing we can test?
+# models/image is polymorphic, it belongs to "imageable"
+# and a post has_many images, and has_one main_image
+
 module ActiveRecord
   class CollectionCacheKeyTest < ActiveRecord::TestCase
     fixtures :developers, :projects, :developers_projects, :topics, :comments, :posts
+
+    # maybe in here
 
     test "collection_cache_key on model" do
       assert_match(/\Adevelopers\/query-(\h+)-(\d+)-(\d+)\z/, Developer.collection_cache_key)
@@ -100,6 +106,11 @@ module ActiveRecord
     test "cache_key for loaded relation with includes" do
       comments = Comment.includes(:post).where("posts.type": "Post").load
       assert_match(/\Acomments\/query-(\h+)-(\d+)-(\d+)\z/, comments.cache_key)
+    end
+
+    test "cache_key for loaded relation with includes polymorphic association that is nil" do
+      posts = Post.includes(:main_image).load
+      assert_match(/\Acomments\/query-(\h+)-(\d+)-(\d+)\z/, posts.cache_key)
     end
 
     test "update_all will update cache_key" do
