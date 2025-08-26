@@ -4,6 +4,43 @@ require "active_support/core_ext/object/duplicable"
 require "active_support/core_ext/array/extract"
 
 module ActiveSupport
+  # Simple LRU cache implementation for caching regexp matches
+  class LRUCache # :nodoc:
+    def initialize(max_size)
+      @max_size = max_size
+      @cache = {}
+      @order = []
+    end
+
+    def get(key)
+      if @cache.key?(key)
+        refresh(key)
+        @cache[key]
+      end
+    end
+
+    def set(key, value)
+      if @cache.key?(key)
+        @cache[key] = value
+        refresh(key)
+      else
+        if @order.size >= @max_size
+          oldest = @order.shift
+          @cache.delete(oldest)
+        end
+        @cache[key] = value
+        @order << key
+      end
+    end
+
+    private
+
+    def refresh(key)
+      @order.delete(key)
+      @order << key
+    end
+  end
+
   # = Active Support Parameter Filter
   #
   # +ParameterFilter+ replaces values in a <tt>Hash</tt>-like object if their
@@ -38,6 +75,7 @@ module ActiveSupport
   #
   class ParameterFilter
     FILTERED = "[FILTERED]" # :nodoc:
+    DEFAULT_CACHE_SIZE = 100 # :nodoc:
 
     # Precompiles an array of filters that otherwise would be passed directly to
     # #initialize. Depending on the quantity and types of filters,
@@ -74,8 +112,10 @@ module ActiveSupport
     # ==== Options
     #
     # * <tt>:mask</tt> - A replaced object when filtered. Defaults to <tt>"[FILTERED]"</tt>.
-    def initialize(filters = [], mask: FILTERED)
+    # * <tt>:cache_size</tt> - Size of the regexp matching cache. Defaults to 100. Set to 0 to disable caching.
+    def initialize(filters = [], mask: FILTERED, cache_size: DEFAULT_CACHE_SIZE)
       @mask = mask
+      @regexp_cache = cache_size > 0 ? LRUCache.new(cache_size) : nil
       compile_filters!(filters)
     end
 
@@ -120,6 +160,10 @@ module ActiveSupport
 
       @regexps << Regexp.new(strings.join("|"), true) unless strings.empty?
       (@deep_regexps ||= []) << Regexp.new(deep_strings.join("|"), true) if deep_strings
+
+      # Combine all regexps into a single regexp for faster matching
+      @combined_regexp = @regexps.size == 1 ? @regexps.first :
+                        @regexps.empty? ? nil : Regexp.union(@regexps)
     end
 
     def call(params, full_parent_key = nil, original_params = params)
@@ -137,7 +181,7 @@ module ActiveSupport
         full_key = full_parent_key ? "#{full_parent_key}.#{key}" : key.to_s
       end
 
-      if @regexps.any? { |r| r.match?(key.to_s) }
+      if regexp_matches_key?(key.to_s)
         value = @mask
       elsif @deep_regexps&.any? { |r| r.match?(full_key) }
         value = @mask
@@ -152,6 +196,19 @@ module ActiveSupport
       end
 
       value
+    end
+
+    def regexp_matches_key?(key_str)
+      return false unless @combined_regexp
+
+      if @regexp_cache
+        cached_result = @regexp_cache.get(key_str)
+        return cached_result unless cached_result.nil?
+      end
+
+      result = @combined_regexp.match?(key_str)
+      @regexp_cache&.set(key_str, result)
+      result
     end
   end
 end
