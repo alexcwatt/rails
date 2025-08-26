@@ -58,8 +58,8 @@ PARAMETER_FILTER = ActiveSupport::ParameterFilter.new(
 
 def example_data
   {
-    "foo" => "bar",
-    "bar" => "baz",
+    "foo" => { "bar" => "baz", "baz" => "bar" },
+    "bar" => { "baz" => "foo", "verification_token" => "baz" },
     "baz" => "foo",
   }
 end
